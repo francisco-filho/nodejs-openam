@@ -1,0 +1,11 @@
+{
+  "name": "nodejs-auth",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": {},
+  "license": "MIT",
+  "dependencies": {
+    "cookie-parser": "^1.4.3",
+    "expressjs": "^1.0.1"
+  }
+}

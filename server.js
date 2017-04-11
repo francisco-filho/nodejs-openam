@@ -1,90 +1,71 @@
 let express = require('express'),
     http = require('http'),
     cookieParser = require('cookie-parser'),
-    app = express()
-
-const AUTH_COOKIE = 'iPlanetDirectoryPro'
-const LOGIN_URL   = 'http://openam.example.com:8090/openam/XUI/#login/goto='
-const AUTH_URL    = 'http://openam.example.com:8090/openam/json/authenticate'
-const IDENTITY_URL= 'http://openam.example.com:8090/openam/identity/attributes?refresh=true&subjectid='
-
+    redis = require('redis'),
+    app = express(),
+    redisClient = redis.createClient()
+let openam = require('./OpenAM')
+let consts = require('./consts')
 app.use(cookieParser())
 
 const PORT = 3000
 
 function getUrl(req){
-  return encodeURIComponent(`${req.protocol}://${req.host}:${port}/${req.originalUrl}`)
-}
-
-const parseAttributeNames = (attrs) => {
-  return attrs.split('\n')
-    .filter((u) => /userdetails.attribute.name=(.*)/.test(u))
-    .map((u) => {
-      const d = u.match('^(.*?)=(.*)').slice(1, 3)
-      return { [d[0]]: d[1]}
-    })
-}
-
-const parseAttributeValues = (attrs) => {
-  return attrs.split('\n')
-    .filter((u) => /userdetails.attribute.value=(.*)/.test(u))
-    .map((u) => {
-      const d = u.match('^(.*?)=(.*)').slice(1, 3)
-      return { [d[0]]: d[1]}
-    })
-}
-
-const parseTokenAttributes = (attrs) => {
-  return attrs.split('\n')
-    .filter((u) => !/userdetails.attribute(.*)/.test(u) && /^(.*?)=(.*)/.test(u))
-    .map((u) => {
-      const d = u.match('^(.*?)=(.*)').slice(1, 3)
-      return { [d[0]]: d[1]}
-    })
-    .reduce((o, n) => {
-      const key = Object.keys(n)[0]
-      o[key] = n[key]
-      return o
-    }, {})
+  return encodeURIComponent(`${req.protocol}://${req.host}:${PORT}/${req.originalUrl}`)
 }
 
 app.get('/', (req, res) => {
-  const cookieValue = req.cookies[AUTH_COOKIE]
+  const cookieValue = req.cookies[consts.AUTH_COOKIE]
 
-  console.log(req.originalUrl, req.path, req)
+  //console.log(req.originalUrl, req.path, req)
 
   if (!cookieValue)
-    res.redirect(LOGIN_URL + getUrl(req))
+    res.redirect(consts.LOGIN_URL + getUrl(req))
   else {
     // TODO: check if data in Redis
+    let user = null
+    const userKey = 'user:'+ req.cookies[consts.AUTH_COOKIE]
+    redisClient.get(userKey, (err, reply) => {
+      if (!err && reply != null){
+        console.log(err, reply)
+        reply = JSON.parse(reply)
+        reply['from'] = 'redis'
+        res.json(reply)
+        return
+      }
 
-    let myreq =http.request({
-      headers: req.headers,
-      host: 'openam.example.com',
-      port: '8090',
-      path: '/openam/identity/attributes?refresh=true&subjectid=' + cookieValue,
-      method: 'GET'
-    }, (response) => {
-      let str = ''
-      response.on('data', (chunk) => {
-        str += chunk
-      })
-
-      response.on('end', (chunk) => {
-        let obj       = parseTokenAttributes(str)
-        const values  = parseAttributeValues(str)
-        const names   = parseAttributeNames(str)
-
-        names.forEach((n,i) => {
-          obj[n['userdetails.attribute.name']] = values[i]['userdetails.attribute.value']
+      let myreq =http.request({
+        headers: req.headers,
+        host: 'openam.example.com',
+        port: '8090',
+        path: '/openam/identity/attributes?refresh=true&subjectid=' + cookieValue,
+        method: 'GET'
+      }, (response) => {
+        let str = ''
+        response.on('data', (chunk) => {
+          str += chunk
         })
 
-        // TODO: save in redis
-        res.json(obj)
-      })
-    })
+        response.on('end', (chunk) => {
+          let obj       = openam.parseTokenAttributes(str)
+          const values  = openam.parseAttributeValues(str)
+          const names   = openam.parseAttributeNames(str)
 
-    myreq.end()
+          names.forEach((n,i) => {
+            obj[n['userdetails.attribute.name']] = values[i]['userdetails.attribute.value']
+          })
+
+          // TODO: save in redisport
+          redisClient.set(userKey, JSON.stringify(obj))
+          console.log('obj', obj)
+          obj['from'] = 'openam'
+          res.json(obj)
+        })
+      })
+
+      myreq.end()
+
+    })
   }
 })
 

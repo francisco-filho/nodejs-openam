@@ -17,17 +17,13 @@ function getUrl(req){
 app.get('/', (req, res) => {
   const cookieValue = req.cookies[consts.AUTH_COOKIE]
 
-  //console.log(req.originalUrl, req.path, req)
-
   if (!cookieValue)
     res.redirect(consts.LOGIN_URL + getUrl(req))
   else {
-    // TODO: check if data in Redis
     let user = null
     const userKey = 'user:'+ req.cookies[consts.AUTH_COOKIE]
     redisClient.get(userKey, (err, reply) => {
       if (!err && reply != null){
-        console.log(err, reply)
         reply = JSON.parse(reply)
         reply['from'] = 'redis'
         res.json(reply)
@@ -57,7 +53,6 @@ app.get('/', (req, res) => {
 
           // TODO: save in redisport
           redisClient.set(userKey, JSON.stringify(obj))
-          console.log('obj', obj)
           obj['from'] = 'openam'
           res.json(obj)
         })

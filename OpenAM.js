@@ -25,7 +25,17 @@ const parseTokenAttributes = (attrs) => {
     })
     .reduce((o, n) => {
       const key = Object.keys(n)[0]
-      o[key] = n[key]
+
+      if (!Array.isArray(o) && o[key]){
+        o = [o[key]]
+      }
+
+      if (Array.isArray(o)){
+        o.push(n[key])
+      } else {
+        o[key] = n[key]
+      }
+
       return o
     }, {})
 }
